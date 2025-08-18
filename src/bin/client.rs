@@ -1,9 +1,14 @@
 use std::io::{self, Read, Write};
 use std::net::TcpStream;
 
+const DEFAULT_ADDR: &'static str = "127.0.0.1";
+const DEFAULT_PORT: &'static str = "7878";
+
 fn main() {
     // Attempt to connect to the server running on the same machine.
-    let mut stream = match TcpStream::connect("127.0.0.1:7878") {
+    let addr = std::env::var("SERVER_ADDR").unwrap_or_else(|_| DEFAULT_ADDR.to_string());
+    let port = std::env::var("SERVER_PORT").unwrap_or_else(|_| DEFAULT_PORT.to_string());
+    let mut stream = match TcpStream::connect(format!("{}:{}", addr, port)) {
         Ok(stream) => {
             println!("Successfully connected to the server!");
             stream
@@ -19,7 +24,9 @@ fn main() {
         // Read user input from the console.
         let mut user_input = String::new();
         println!("Enter a message to send to the server (or 'exit' to quit):");
-        io::stdin().read_line(&mut user_input).expect("Failed to read line");
+        io::stdin()
+            .read_line(&mut user_input)
+            .expect("Failed to read line");
 
         // Trim whitespace from the input.
         let trimmed_input = user_input.trim();

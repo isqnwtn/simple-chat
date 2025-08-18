@@ -1,12 +1,19 @@
-
-use tokio::io;
-use simple_lib::server_handler::ServerHandler;
+use simple_lib::{actor_impl::server_impl::init_central_controller};
+use tokio::{io, net::TcpListener};
 
 // The `#[tokio::main]` macro transforms the `main` function into an asynchronous one,
 // setting up the Tokio runtime and executing the async code.
 #[tokio::main]
 async fn main() -> io::Result<()> {
-    let s = ServerHandler::new().await?;
-    s.main_loop().await?;
+    // let s = ServerHandler::new().await?;
+    // s.main_loop().await?;
+    _launch_server().await?;
+    Ok(())
+}
+
+async fn _launch_server() -> io::Result<()> {
+    let listener = TcpListener::bind("127.0.0.1:7878").await?;
+    let join_handle = init_central_controller(1024, listener).await;
+    join_handle.await?;
     Ok(())
 }

@@ -1,7 +1,8 @@
 use tokio::io;
 use tokio::net::TcpListener;
 
-use crate::client_handler::handle_client;
+use crate::client_handler::handler::BaseClientHandler;
+use crate::client_handler::msg_handler::MsgHandler;
 
 pub struct ServerHandler {
     listener: TcpListener,
@@ -25,7 +26,8 @@ impl ServerHandler {
                     // This allows the server to handle multiple clients at once without creating new OS threads.
                     // The `move` keyword ensures ownership of the stream is transferred to the new task.
                     tokio::spawn(async move {
-                        handle_client(stream).await;
+                        let mut client_handler = BaseClientHandler::<MsgHandler>::new(stream);
+                        client_handler.handle().await;
                     });
                 }
                 Err(e) => {
