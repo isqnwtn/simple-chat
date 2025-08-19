@@ -55,6 +55,7 @@ impl ServerActorTrait for CentralController {
         let this_handle = Arc::new(CENTRAL_CONTROLLER_HANDLE
             .get()
             .unwrap());
+        println!("Connection request from : {:?}", addr);
         let this_connection : TcpActorHandle<SingleConnectionHandler> = TcpActorHandle::new(1024, stream, SingleConnectionState::new(this_handle, addr));
         _state._connections.insert(addr, this_connection);
     }

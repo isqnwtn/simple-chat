@@ -21,3 +21,7 @@ tokio-util = { version = "0.7", features = ["codec"] }
 bytes = "1"
 futures = "0.3"
 once_cell = "1.19.0"
+
+# client requirements
+ratatui = "0.22.0"
+crossterm = "0.26.1"
