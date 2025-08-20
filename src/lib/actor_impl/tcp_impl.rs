@@ -10,7 +10,7 @@ use crate::{
         server_actor::ServerActorHandler,
         traits::{ActorTrait, TcpConnectionHandlerActor},
     },
-    actor_impl::server_impl::{CentralController, ConnectionMessage},
+    actor_impl::server_impl::{CentralController, ConnectionMessage}, msg::ClientMessage,
 };
 
 pub struct SingleConnectionHandler {}
@@ -41,13 +41,19 @@ impl ActorTrait for SingleConnectionHandler {
 }
 
 impl TcpConnectionHandlerActor for SingleConnectionHandler {
-    type Message = String;
+    type Message = ClientMessage;
 
     async fn handle_message(state: &mut Self::State, msg: Self::Message) -> () {
-        state
-            .controller_handle
-            .send(ConnectionMessage::new(msg, state.addr))
-            .await;
+        match msg {
+            ClientMessage::UserName(_name) => {
+            }
+            ClientMessage::Message(msg) => {
+                state
+                    .controller_handle
+                    .send(ConnectionMessage::new(msg, state.addr))
+                    .await;
+            }
+        }
     }
 }
 

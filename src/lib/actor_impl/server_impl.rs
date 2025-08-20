@@ -16,6 +16,7 @@ use crate::actor::{
     traits::{ActorTrait, ServerActorTrait},
 };
 use crate::actor_impl::tcp_impl::{SingleConnectionHandler, SingleConnectionState};
+use crate::msg::ClientMessage;
 
 pub struct CentralController {}
 
@@ -35,7 +36,7 @@ impl ActorTrait for CentralController {
         println!("Received {:?}", _msg);
         for (_addr, handle) in _state._connections.iter() {
             if _msg._addr != *_addr {
-                handle.send(_msg._message.clone()).await;
+                handle.send(ClientMessage::Message(_msg._message.clone())).await;
             }
         }
         ()

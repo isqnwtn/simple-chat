@@ -12,7 +12,8 @@ async fn main() -> io::Result<()> {
 }
 
 async fn _launch_server() -> io::Result<()> {
-    let listener = TcpListener::bind("127.0.0.1:7878").await?;
+    let addr = std::env::var("SIMPLE_CHAT_ADDR").unwrap_or("127.0.0.1:7878".to_string());
+    let listener = TcpListener::bind(addr).await?;
     let join_handle = init_central_controller(1024, listener).await;
     join_handle.await?;
     Ok(())

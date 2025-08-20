@@ -1,8 +1,5 @@
-
 use crate::{
-    actor::{
-        traits::{ActorTrait, TcpConnectionHandlerActor},
-    },
+    actor::traits::{ActorTrait, TcpConnectionHandlerActor},
     msg::TcpMessage,
 };
 use tokio::{
@@ -27,8 +24,8 @@ pub struct TcpActor<A: TcpConnectionHandlerActor> {
 }
 
 pub enum ControllerMessages<A> {
-   WriteStream(A),
-   Null
+    WriteStream(A),
+    Null,
 }
 
 impl<A: TcpConnectionHandlerActor> TcpActor<A> {
@@ -53,7 +50,11 @@ impl<A: TcpConnectionHandlerActor> TcpActor<A> {
                     match msg {
                         ControllerMessages::WriteStream(msg) => {
                             let bytes = msg.to_bytes();
-                            let _ = self.stream.write(&bytes).await;
+                            if let Some(bytes) = bytes {
+                                let _ = self.stream.write(&bytes).await;
+                            } else {
+                                eprintln!("failed to serialize message");
+                            }
                         }
                         ControllerMessages::Null => {}
                     }
@@ -68,8 +69,11 @@ impl<A: TcpConnectionHandlerActor> TcpActor<A> {
                        break;
                    } else {
                        let _parsed = <A as TcpConnectionHandlerActor>::Message::from_bytes(&buffer[0..size]);
-                       let _a = <A as TcpConnectionHandlerActor>::handle_message(&mut self.state, _parsed).await;
-                       let _ = self.stream.write(&buffer[0..size]);
+                       if let Some(parsed) = _parsed {
+                           let _a = <A as TcpConnectionHandlerActor>::handle_message(&mut self.state, parsed).await;
+                       } else {
+                           eprintln!("failed to parse message");
+                       }
                    }
                 }
                 else => {
