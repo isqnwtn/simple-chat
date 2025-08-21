@@ -3,7 +3,7 @@ use crate::{
     msg::TcpMessage,
 };
 use tokio::{
-    io::{AsyncReadExt, AsyncWriteExt},
+    io::{AsyncReadExt},
     net::TcpStream,
     sync::mpsc,
 };
@@ -49,12 +49,13 @@ impl<A: TcpConnectionHandlerActor> TcpActor<A> {
                 Some(msg) = self.receiver.recv() => {
                     match msg {
                         ControllerMessages::WriteStream(msg) => {
-                            let bytes = msg.to_bytes();
-                            if let Some(bytes) = bytes {
-                                let _ = self.stream.write(&bytes).await;
-                            } else {
-                                eprintln!("failed to serialize message");
-                            }
+                            let _ = <A as TcpConnectionHandlerActor>::handle_controller_message(&mut self.state, msg, &mut self.stream).await;
+                            // let bytes = msg.to_bytes();
+                            // if let Some(bytes) = bytes {
+                            //     let _ = self.stream.write(&bytes).await;
+                            // } else {
+                            //     eprintln!("failed to serialize message");
+                            // }
                         }
                         ControllerMessages::Null => {}
                     }

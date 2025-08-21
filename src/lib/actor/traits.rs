@@ -17,14 +17,6 @@ pub trait ActorTrait: 'static {
     // how to process such messages, this could modify the state of the actor
     fn handle(state: &mut Self::State, msg: Self::ActorMessage) -> impl Future<Output = ()> + Send;
 
-    // questions that can be asked to the actor
-    type Ask: Send + 'static;
-    // expected responses from the actor captured into a type
-    type Answer: Send + 'static;
-    // how the actor handles the questions based on the current state of the
-    // actor, remember this can also modify the state
-    fn ask(state: &mut Self::State, msg: Self::Ask) -> Self::Answer;
-
     // send a kill signal to the actor, causing it to run the cleanup code and
     // drop all the receiver handles it has
     type PoisonPill: Default + Send + 'static;
@@ -39,4 +31,5 @@ pub trait ServerActorTrait: ActorTrait {
 pub trait TcpConnectionHandlerActor : ActorTrait {
     type Message: TcpMessage;
     fn handle_message(state: &mut Self::State, msg: Self::Message) -> impl Future<Output = ()> + Send;
+    fn handle_controller_message(state: &mut Self::State, msg: Self::Message, stream:&mut TcpStream) -> impl Future<Output = ()> + Send;
 }

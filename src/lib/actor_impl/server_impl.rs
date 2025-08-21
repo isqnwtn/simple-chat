@@ -25,24 +25,23 @@ impl ActorTrait for CentralController {
     type State = ServerState;
     type ActorMessage = ConnectionMessage;
     type PoisonPill = ();
-    type Answer = ();
-    type Ask = ();
 
     fn startup(_params: Self::InitParams) -> Self::State {
         ServerState::new()
     }
 
-    async fn handle(_state: &mut Self::State, _msg: Self::ActorMessage) -> () {
+    async fn handle(_state: &mut Self::State, _msg: ConnectionMessage) -> () {
         println!("Received {:?}", _msg);
-        for (_addr, handle) in _state._connections.iter() {
-            if _msg._addr != *_addr {
-                handle.send(ClientMessage::Message(_msg._message.clone())).await;
-            }
+        match _msg {
+            ConnectionMessage::UserMessage { _addr, _message } => {
+                for (_addr, handle) in _state._connections.iter() {
+                    if _addr != _addr {
+                        handle.send(ClientMessage::Message(_message.clone())).await;
+                    }
+                }
+            },
+            ConnectionMessage::UserCreationRequest { _addr, _name } => {}
         }
-        ()
-    }
-
-    fn ask(_state: &mut Self::State, _msg: Self::Ask) -> () {
         ()
     }
 
@@ -63,15 +62,9 @@ impl ServerActorTrait for CentralController {
 }
 
 #[derive(Debug)]
-pub struct ConnectionMessage {
-    _message: String,
-    _addr: SocketAddr,
-}
-
-impl ConnectionMessage {
-    pub fn new(message: String, addr: SocketAddr) -> Self {
-        Self { _message: message, _addr: addr }
-    }
+pub enum ConnectionMessage {
+    UserMessage{_addr: SocketAddr, _message: String},
+    UserCreationRequest{_addr: SocketAddr,_name: String},
 }
 
 pub struct ServerState {
