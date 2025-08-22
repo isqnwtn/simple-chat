@@ -15,9 +15,9 @@ use ratatui::{
     widgets::{Block, Borders, Paragraph},
     Terminal,
 };
-use simple_lib::msg::{ClientMessage,TcpMessage};
+use simple_lib::msg::{ClientMessage, TcpMessage};
 use tokio::{
-    io::{split, AsyncBufReadExt, AsyncWriteExt, BufReader},
+    io::{split, AsyncReadExt, AsyncWriteExt, BufReader},
     net::TcpStream,
     sync::mpsc,
 };
@@ -69,14 +69,23 @@ async fn main() -> io::Result<()> {
         }
     };
     let (reader, mut writer) = split(stream);
-    let reader = BufReader::new(reader);
+    let mut reader = BufReader::new(reader);
 
     // Task: read from server
     let tx_clone = tx.clone();
-    tokio::spawn(async move {
-        let mut lines = reader.lines();
-        while let Ok(Some(line)) = lines.next_line().await {
-            let _ = tx_clone.send(Event::ServerMsg(line)).await;
+    let am = tokio::spawn(async move {
+        let mut buffer = [0u8; 1024];
+        while let Ok(n) = reader.read(&mut buffer).await {
+            if n == 0 {
+                break;
+            } else {
+                let c = ClientMessage::from_bytes(&buffer[..n]);
+                if let Some(ClientMessage::Message(msg)) = c {
+                    if let Err(e) = tx_clone.send(Event::ServerMsg(msg.clone())).await {
+                        eprintln!("failed to send message to UI : {:?}", e);
+                    }
+                }
+            }
         }
     });
 
@@ -100,7 +109,7 @@ async fn main() -> io::Result<()> {
                         KeyCode::Esc => {
                             let _ = tx_clone.send(Event::End).await;
                             break;
-                        },
+                        }
                         _ => {
                             let _ = tx_clone.send(Event::End).await;
                             break;
@@ -140,7 +149,6 @@ async fn main() -> io::Result<()> {
             Break,
         }
 
-
         // Handle events
         let next_action = if let Some(event) = rx.recv().await {
             match event {
@@ -162,10 +170,6 @@ async fn main() -> io::Result<()> {
                             } else {
                                 eprintln!("failed to serialize message");
                             }
-                            // writer.write_all(input.as_bytes()).await.unwrap();
-                            // writer.write_all(b"\n").await.unwrap();
-                            // messages.push(format!("Me: {}", input));
-                            // input.clear();
                         }
                     } else if s == "\x08" {
                         input.pop();
@@ -174,9 +178,7 @@ async fn main() -> io::Result<()> {
                     }
                     NextAction::Continue
                 }
-                Event::End => {
-                    NextAction::Break
-                }
+                Event::End => NextAction::Break,
             }
         } else {
             NextAction::Break
@@ -194,5 +196,6 @@ async fn main() -> io::Result<()> {
     disable_raw_mode()?;
     execute!(terminal.backend_mut(), LeaveAlternateScreen)?;
     terminal.show_cursor()?;
+    am.await.inspect(|f| println!("All sent message {:?}", f))?;
     Ok(())
 }

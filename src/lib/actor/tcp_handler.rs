@@ -1,9 +1,9 @@
 use crate::{
-    actor::traits::{ActorTrait, TcpConnectionHandlerActor},
-    msg::TcpMessage,
+    actor_impl::{server_impl::ConnectionMessage, tcp_impl::SingleConnectionState},
+    msg::{ClientMessage, TcpMessage},
 };
 use tokio::{
-    io::{AsyncReadExt},
+    io::{AsyncReadExt, AsyncWriteExt},
     net::TcpStream,
     sync::mpsc,
 };
@@ -11,34 +11,34 @@ use tokio::{
 /// The Actor struct, responsible for spawning the actor that receive the
 /// messages and then handle them, the actor itself may have a state that can
 /// be affected by the message
-pub struct TcpActor<A: TcpConnectionHandlerActor> {
+pub struct TcpActor {
     // a handle to the receiver from mpsc::channel so that we can use it to
     // receive messages
-    receiver: mpsc::Receiver<ControllerMessages<<A as TcpConnectionHandlerActor>::Message>>,
+    receiver: mpsc::Receiver<ControllerMessages>,
     // a receiver to handle poison pill
-    poison_pill: mpsc::Receiver<<A as ActorTrait>::PoisonPill>,
+    poison_pill: mpsc::Receiver<()>,
     // the state of the actor that can be modified by the handle function
-    state: <A as ActorTrait>::State,
+    state: SingleConnectionState,
     // a tcp stream
     stream: TcpStream,
 }
 
-pub enum ControllerMessages<A> {
-    WriteStream(A),
+pub enum ControllerMessages {
+    WriteStream(ClientMessage),
     Null,
 }
 
-impl<A: TcpConnectionHandlerActor> TcpActor<A> {
+impl TcpActor {
     pub fn new(
-        rx: mpsc::Receiver<ControllerMessages<<A as TcpConnectionHandlerActor>::Message>>,
-        krx: mpsc::Receiver<<A as ActorTrait>::PoisonPill>,
+        rx: mpsc::Receiver<ControllerMessages>,
+        krx: mpsc::Receiver<()>,
         stream: TcpStream,
-        init_params: <A as ActorTrait>::InitParams,
+        init_params: SingleConnectionState,
     ) -> Self {
         TcpActor {
             receiver: rx,
             poison_pill: krx,
-            state: <A as ActorTrait>::startup(init_params),
+            state: init_params,
             stream,
         }
     }
@@ -49,19 +49,23 @@ impl<A: TcpConnectionHandlerActor> TcpActor<A> {
                 Some(msg) = self.receiver.recv() => {
                     match msg {
                         ControllerMessages::WriteStream(msg) => {
-                            let _ = <A as TcpConnectionHandlerActor>::handle_controller_message(&mut self.state, msg, &mut self.stream).await;
-                            // let bytes = msg.to_bytes();
-                            // if let Some(bytes) = bytes {
-                            //     let _ = self.stream.write(&bytes).await;
-                            // } else {
-                            //     eprintln!("failed to serialize message");
-                            // }
+                            // let _ = <A as TcpConnectionHandlerActor>::handle_controller_message(&mut self.state, msg, &mut self.stream).await;
+                            let bytes = msg.to_bytes();
+                            if let Some(bytes) = bytes {
+                                if let Err(e) = self.stream.write_all(&bytes).await {
+                                    eprintln!("failed to write to addr: {}, error: {}", self.state.addr, e);
+                                } else {
+                                    println!("TCP handler {} writing to stream, msg: {:?}",self.state.addr,msg);
+                                }
+                            } else {
+                                eprintln!("failed to serialize message");
+                            }
                         }
                         ControllerMessages::Null => {}
                     }
                 }
-                Some(p) = self.poison_pill.recv() => {
-                    <A as ActorTrait>::cleanup(&mut self.state,p);
+                Some(_p) = self.poison_pill.recv() => {
+                    // <A as ActorTrait>::cleanup(&mut self.state,p);
                     eprintln!("killing actor");
                     return 1;
                 }
@@ -69,9 +73,21 @@ impl<A: TcpConnectionHandlerActor> TcpActor<A> {
                    if size == 0 {
                        break;
                    } else {
-                       let _parsed = <A as TcpConnectionHandlerActor>::Message::from_bytes(&buffer[0..size]);
+                       let _parsed = ClientMessage::from_bytes(&buffer[0..size]);
                        if let Some(parsed) = _parsed {
-                           let _a = <A as TcpConnectionHandlerActor>::handle_message(&mut self.state, parsed).await;
+                           // let _a = <A as TcpConnectionHandlerActor>::handle_message(&mut self.state, parsed).await;
+                           match parsed {
+                               ClientMessage::UserName(_name) => {}
+                               ClientMessage::Message(msg) => {
+                                   self.state
+                                       .controller_handle
+                                       .send(ConnectionMessage::UserMessage {
+                                           addr: self.state.addr,
+                                           message: msg,
+                                       })
+                                       .await;
+                               }
+                           }
                        } else {
                            eprintln!("failed to parse message");
                        }
@@ -79,10 +95,10 @@ impl<A: TcpConnectionHandlerActor> TcpActor<A> {
                 }
                 else => {
                     eprintln!("all senders dropped");
-                    <A as ActorTrait>::cleanup(
-                        &mut self.state,
-                        <A as ActorTrait>::PoisonPill::default()
-                    );
+                    // <A as ActorTrait>::cleanup(
+                    //     &mut self.state,
+                    //     <A as ActorTrait>::PoisonPill::default()
+                    // );
                     break;
                 }
             }
@@ -93,27 +109,24 @@ impl<A: TcpConnectionHandlerActor> TcpActor<A> {
 
 /// ActorHandle can be used to send messages to the respective actor.
 #[derive(Clone)]
-pub struct TcpActorHandle<A: TcpConnectionHandlerActor> {
+pub struct TcpActorHandle {
     // holds a handle to the sender from mpsc::channel
-    id: mpsc::Sender<ControllerMessages<<A as TcpConnectionHandlerActor>::Message>>,
+    id: mpsc::Sender<ControllerMessages>,
     // holds a handle to send poison pill
-    kid: mpsc::Sender<<A as ActorTrait>::PoisonPill>,
+    kid: mpsc::Sender<()>,
 }
 
-impl<A: TcpConnectionHandlerActor> TcpActorHandle<A> {
+impl TcpActorHandle {
     // when we create a new actor what we only return is the handle, during
     // it's creation we launch the actor and create a handle to it as well.
-    pub fn new(size: usize, stream: TcpStream, init_params: <A as ActorTrait>::InitParams) -> Self {
+    pub fn new(size: usize, stream: TcpStream, init_params: SingleConnectionState) -> Self {
         let (tx, rx): (
-            mpsc::Sender<ControllerMessages<<A as TcpConnectionHandlerActor>::Message>>,
-            mpsc::Receiver<ControllerMessages<<A as TcpConnectionHandlerActor>::Message>>,
+            mpsc::Sender<ControllerMessages>,
+            mpsc::Receiver<ControllerMessages>,
         ) = mpsc::channel(size);
-        let (ktx, krx): (
-            mpsc::Sender<<A as ActorTrait>::PoisonPill>,
-            mpsc::Receiver<<A as ActorTrait>::PoisonPill>,
-        ) = mpsc::channel(1);
+        let (ktx, krx): (mpsc::Sender<()>, mpsc::Receiver<()>) = mpsc::channel(1);
 
-        let actor: TcpActor<A> = TcpActor::new(rx, krx, stream, init_params);
+        let actor: TcpActor = TcpActor::new(rx, krx, stream, init_params);
         tokio::spawn(async move {
             let res = actor.start().await;
             eprintln!("Actor exited with : {}", res);
@@ -121,12 +134,12 @@ impl<A: TcpConnectionHandlerActor> TcpActorHandle<A> {
         let handle = TcpActorHandle { id: tx, kid: ktx };
         return handle;
     }
-    pub async fn send(&self, msg: <A as TcpConnectionHandlerActor>::Message) -> () {
+    pub async fn send(&self, msg: ClientMessage) -> () {
         if let Err(e) = self.id.send(ControllerMessages::WriteStream(msg)).await {
             eprintln!("{:?}", e);
         }
     }
-    pub async fn terminate(&self, msg: <A as ActorTrait>::PoisonPill) -> () {
+    pub async fn terminate(&self, msg: ()) -> () {
         if let Err(e) = self.kid.send(msg).await {
             eprintln!("{:?}", e);
         }

@@ -1,36 +1,42 @@
+use std::sync::Arc;
 
-use crate::actor::traits::{ActorTrait, ServerActorTrait};
-use tokio::{
-    net::TcpListener,
-    sync::mpsc, task::JoinHandle,
+// use crate::actor::traits::{ActorTrait, ServerActorTrait};
+use tokio::{net::TcpListener, sync::mpsc, task::JoinHandle};
+
+use crate::{
+    actor::tcp_handler::TcpActorHandle,
+    actor_impl::{
+        server_impl::{ConnectionMessage, ServerState, CENTRAL_CONTROLLER_HANDLE},
+        tcp_impl::SingleConnectionState,
+    },
+    msg::ClientMessage,
 };
 
 /// The Actor struct, responsible for spawning the actor that receive the
 /// messages and then handle them, the actor itself may have a state that can
 /// be affected by the message
-pub struct ServerActor<A: ServerActorTrait> {
+pub struct ServerActor {
     // a handle to the receiver from mpsc::channel so that we can use it to
     // receive messages
-    receiver: mpsc::Receiver<<A as ActorTrait>::ActorMessage>,
+    receiver: mpsc::Receiver<ConnectionMessage>,
     // a receiver to handle poison pill
-    poison_pill: mpsc::Receiver<<A as ActorTrait>::PoisonPill>,
+    poison_pill: mpsc::Receiver<()>,
     // the state of the actor that can be modified by the handle function
-    state: <A as ActorTrait>::State,
+    state: ServerState,
     // a tcp stream
     listener: TcpListener,
 }
 
-impl<A: ServerActorTrait> ServerActor<A> {
+impl ServerActor {
     pub fn new(
-        rx: mpsc::Receiver<<A as ActorTrait>::ActorMessage>,
-        krx: mpsc::Receiver<<A as ActorTrait>::PoisonPill>,
+        rx: mpsc::Receiver<ConnectionMessage>,
+        krx: mpsc::Receiver<()>,
         stream: TcpListener,
-        init_params: <A as ActorTrait>::InitParams,
     ) -> Self {
         ServerActor {
             receiver: rx,
             poison_pill: krx,
-            state: <A as ActorTrait>::startup(init_params),
+            state: ServerState::new(),
             listener: stream,
         }
     }
@@ -38,22 +44,41 @@ impl<A: ServerActorTrait> ServerActor<A> {
         loop {
             tokio::select! {
                 Some(msg) = self.receiver.recv() => {
-                    <A as ActorTrait>::handle(&mut self.state, msg).await;
+                    // <A as ActorTrait>::handle(&mut self.state, msg).await;
+                    println!("Received {:?}", msg);
+                    match msg {
+                        ConnectionMessage::UserMessage { addr, message } => {
+                            for (_addr, handle) in self.state._connections.iter() {
+                                println!("Sending to {:?}", _addr);
+                                if *_addr != addr {
+                                    handle.send(ClientMessage::Message(message.clone())).await;
+                                }
+                            }
+                        },
+                        ConnectionMessage::UserCreationRequest { _addr, _name } => {}
+                    }
+                    ()
                 }
-                Some(p) = self.poison_pill.recv() => {
-                    <A as ActorTrait>::cleanup(&mut self.state,p);
+                Some(_p) = self.poison_pill.recv() => {
+                    // <A as ActorTrait>::cleanup(&mut self.state,p);
                     eprintln!("killing actor");
                     return 1;
                 }
                 Ok((stream, addr)) = self.listener.accept() => {
-                    <A as ServerActorTrait>::handle_connection(&mut self.state, stream, addr);
+                    // <A as ServerActorTrait>::handle_connection(&mut self.state, stream, addr);
+                    let this_handle = Arc::new(CENTRAL_CONTROLLER_HANDLE
+                        .get()
+                        .unwrap());
+                    println!("Connection request from : {:?}", addr);
+                    let this_connection : TcpActorHandle = TcpActorHandle::new(1024, stream, SingleConnectionState::new(this_handle, addr));
+                    self.state._connections.insert(addr, this_connection);
                 }
                 else => {
                     eprintln!("all senders dropped");
-                    <A as ActorTrait>::cleanup(
-                        &mut self.state,
-                        <A as ActorTrait>::PoisonPill::default()
-                    );
+                    // <A as ActorTrait>::cleanup(
+                    //     &mut self.state,
+                    //     <A as ActorTrait>::PoisonPill::default()
+                    // );
                     break;
                 }
             }
@@ -64,44 +89,41 @@ impl<A: ServerActorTrait> ServerActor<A> {
 
 /// ActorHandle can be used to send messages to the respective actor.
 #[derive(Clone)]
-pub struct ServerActorHandler<A: ActorTrait> {
+pub struct ServerActorHandler {
     // holds a handle to the sender from mpsc::channel
-    id: mpsc::Sender<<A as ActorTrait>::ActorMessage>,
+    id: mpsc::Sender<ConnectionMessage>,
     // holds a handle to send poison pill
-    kid: mpsc::Sender<<A as ActorTrait>::PoisonPill>,
+    kid: mpsc::Sender<()>,
 }
 
-impl<A: ServerActorTrait> ServerActorHandler<A> {
+impl ServerActorHandler {
     // when we create a new actor what we only return is the handle, during
     // it's creation we launch the actor and create a handle to it as well.
     pub fn new(
         size: usize,
         listener: TcpListener,
-        init_params: <A as ActorTrait>::InitParams,
+        // init_params: <A as ActorTrait>::InitParams,
     ) -> (Self, JoinHandle<()>) {
         let (tx, rx): (
-            mpsc::Sender<<A as ActorTrait>::ActorMessage>,
-            mpsc::Receiver<<A as ActorTrait>::ActorMessage>,
+            mpsc::Sender<ConnectionMessage>,
+            mpsc::Receiver<ConnectionMessage>,
         ) = mpsc::channel(size);
-        let (ktx, krx): (
-            mpsc::Sender<<A as ActorTrait>::PoisonPill>,
-            mpsc::Receiver<<A as ActorTrait>::PoisonPill>,
-        ) = mpsc::channel(1);
+        let (ktx, krx): (mpsc::Sender<()>, mpsc::Receiver<()>) = mpsc::channel(1);
 
-        let actor: ServerActor<A> = ServerActor::new(rx, krx, listener, init_params);
+        let actor: ServerActor = ServerActor::new(rx, krx, listener);
         let join_handle = tokio::spawn(async move {
             let res = actor.start().await;
             eprintln!("Actor exited with : {}", res);
         });
         let handle = ServerActorHandler { id: tx, kid: ktx };
-        return (handle,join_handle);
+        return (handle, join_handle);
     }
-    pub async fn send(&self, msg: <A as ActorTrait>::ActorMessage) -> () {
+    pub async fn send(&self, msg: ConnectionMessage) -> () {
         if let Err(e) = self.id.send(msg).await {
             eprintln!("{:?}", e);
         }
     }
-    pub async fn terminate(&self, msg: <A as ActorTrait>::PoisonPill) -> () {
+    pub async fn terminate(&self, msg: ()) -> () {
         if let Err(e) = self.kid.send(msg).await {
             eprintln!("{:?}", e);
         }
