@@ -15,7 +15,7 @@ use ratatui::{
     widgets::{Block, Borders, Paragraph},
     Terminal,
 };
-use simple_lib::msg::{ClientMessage, TcpMessage};
+use simple_lib::msg::{ClientMessage, ServerResponse, TcpMessage};
 use tokio::{
     io::{split, AsyncReadExt, AsyncWriteExt, BufReader},
     net::TcpStream,
@@ -33,7 +33,7 @@ struct Args {
 
 enum Event {
     Input(String),
-    ServerMsg(String),
+    ServerMsg{from: String, message: String},
     End,
 }
 
@@ -73,15 +73,15 @@ async fn main() -> io::Result<()> {
 
     // Task: read from server
     let tx_clone = tx.clone();
-    let am = tokio::spawn(async move {
+    tokio::spawn(async move {
         let mut buffer = [0u8; 1024];
         while let Ok(n) = reader.read(&mut buffer).await {
             if n == 0 {
                 break;
             } else {
-                let c = ClientMessage::from_bytes(&buffer[..n]);
-                if let Some(ClientMessage::Message(msg)) = c {
-                    if let Err(e) = tx_clone.send(Event::ServerMsg(msg.clone())).await {
+                let c = ServerResponse::from_bytes(&buffer[..n]);
+                if let Some(ServerResponse::Broadcast { username, message }) = c {
+                    if let Err(e) = tx_clone.send(Event::ServerMsg{from: username, message: message.clone()}).await {
                         eprintln!("failed to send message to UI : {:?}", e);
                     }
                 }
@@ -152,8 +152,8 @@ async fn main() -> io::Result<()> {
         // Handle events
         let next_action = if let Some(event) = rx.recv().await {
             match event {
-                Event::ServerMsg(msg) => {
-                    messages.push(format!("Server: {}", msg));
+                Event::ServerMsg{from, message} => {
+                    messages.push(format!("{}: {}", from, message));
                     NextAction::Continue
                 }
                 Event::Input(s) => {
@@ -196,6 +196,5 @@ async fn main() -> io::Result<()> {
     disable_raw_mode()?;
     execute!(terminal.backend_mut(), LeaveAlternateScreen)?;
     terminal.show_cursor()?;
-    am.await.inspect(|f| println!("All sent message {:?}", f))?;
     Ok(())
 }

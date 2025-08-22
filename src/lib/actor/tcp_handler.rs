@@ -1,6 +1,6 @@
 use crate::{
     actor_impl::{server_impl::ConnectionMessage, tcp_impl::SingleConnectionState},
-    msg::{ClientMessage, TcpMessage},
+    msg::{ClientMessage, ServerResponse, TcpMessage},
 };
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
@@ -24,7 +24,7 @@ pub struct TcpActor {
 }
 
 pub enum ControllerMessages {
-    WriteStream(ClientMessage),
+    WriteStream(ServerResponse),
     Null,
 }
 
@@ -134,7 +134,7 @@ impl TcpActorHandle {
         let handle = TcpActorHandle { id: tx, kid: ktx };
         return handle;
     }
-    pub async fn send(&self, msg: ClientMessage) -> () {
+    pub async fn send(&self, msg: ServerResponse) -> () {
         if let Err(e) = self.id.send(ControllerMessages::WriteStream(msg)).await {
             eprintln!("{:?}", e);
         }

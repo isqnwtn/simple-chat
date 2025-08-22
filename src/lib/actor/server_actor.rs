@@ -9,7 +9,7 @@ use crate::{
         server_impl::{ConnectionMessage, ServerState, CENTRAL_CONTROLLER_HANDLE},
         tcp_impl::SingleConnectionState,
     },
-    msg::ClientMessage,
+    msg::{ ServerResponse},
 };
 
 /// The Actor struct, responsible for spawning the actor that receive the
@@ -44,14 +44,12 @@ impl ServerActor {
         loop {
             tokio::select! {
                 Some(msg) = self.receiver.recv() => {
-                    // <A as ActorTrait>::handle(&mut self.state, msg).await;
                     println!("Received {:?}", msg);
                     match msg {
                         ConnectionMessage::UserMessage { addr, message } => {
                             for (_addr, handle) in self.state._connections.iter() {
-                                println!("Sending to {:?}", _addr);
                                 if *_addr != addr {
-                                    handle.send(ClientMessage::Message(message.clone())).await;
+                                    handle.send(ServerResponse::Broadcast { username: format!("{:?}",addr), message: message.clone() }).await;
                                 }
                             }
                         },
@@ -60,7 +58,6 @@ impl ServerActor {
                     ()
                 }
                 Some(_p) = self.poison_pill.recv() => {
-                    // <A as ActorTrait>::cleanup(&mut self.state,p);
                     eprintln!("killing actor");
                     return 1;
                 }
