@@ -4,7 +4,7 @@
 - run the server using `cargo run --bin server`
 - run the client using `cargo run --bin client -- -u <username>`
 - An example of the chat client in action can be seen below:
-![Example Chat Client](example.gif)
+![Example Chat Client](./example.gif)
 
 
 ## Summary
