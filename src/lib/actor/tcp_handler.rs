@@ -71,13 +71,15 @@ impl TcpActor {
                 }
                 Ok(size) = self.stream.read(&mut buffer) => {
                    if size == 0 {
+                       self.state.controller_handle.send(ConnectionMessage::ConnectionDropped { addr: self.state.addr }).await;
                        break;
                    } else {
                        let _parsed = ClientMessage::from_bytes(&buffer[0..size]);
                        if let Some(parsed) = _parsed {
-                           // let _a = <A as TcpConnectionHandlerActor>::handle_message(&mut self.state, parsed).await;
                            match parsed {
-                               ClientMessage::UserName(_name) => {}
+                               ClientMessage::UserName(_name) => {
+                                   self.state.controller_handle.send(ConnectionMessage::UserCreationRequest { _addr: self.state.addr, _name }).await;
+                               }
                                ClientMessage::Message(msg) => {
                                    self.state
                                        .controller_handle
@@ -95,10 +97,7 @@ impl TcpActor {
                 }
                 else => {
                     eprintln!("all senders dropped");
-                    // <A as ActorTrait>::cleanup(
-                    //     &mut self.state,
-                    //     <A as ActorTrait>::PoisonPill::default()
-                    // );
+                    self.state.controller_handle.send(ConnectionMessage::ConnectionDropped { addr: self.state.addr }).await;
                     break;
                 }
             }

@@ -9,7 +9,7 @@ use crate::{
         server_impl::{ConnectionMessage, ServerState, CENTRAL_CONTROLLER_HANDLE},
         tcp_impl::SingleConnectionState,
     },
-    msg::{ ServerResponse},
+    msg::ServerResponse,
 };
 
 /// The Actor struct, responsible for spawning the actor that receive the
@@ -47,13 +47,37 @@ impl ServerActor {
                     println!("Received {:?}", msg);
                     match msg {
                         ConnectionMessage::UserMessage { addr, message } => {
-                            for (_addr, handle) in self.state._connections.iter() {
-                                if *_addr != addr {
-                                    handle.send(ServerResponse::Broadcast { username: format!("{:?}",addr), message: message.clone() }).await;
+                            if let Some((_,Some(sender_name))) = self.state.connections.get(&addr) {
+                                for (_addr, (handle,_)) in self.state.connections.iter() {
+                                    if *_addr != addr {
+                                        handle.send(ServerResponse::Broadcast { username: format!("{:?}",sender_name), message: message.clone() }).await;
+                                    }
                                 }
                             }
                         },
-                        ConnectionMessage::UserCreationRequest { _addr, _name } => {}
+                        ConnectionMessage::UserCreationRequest { _addr, _name } => {
+                            if !self.state.user_names.contains(&_name) {
+                                self.state.user_names.insert(_name.clone());
+                                self.state.connections.entry(_addr).and_modify(|(_,name)| {
+                                   *name = Some(_name);
+                                });
+                                if let Some((handle,_)) = self.state.connections.get_mut(&_addr) {
+                                    handle.send(ServerResponse::UsernameAccepted).await;
+                                }
+                            } else {
+                                if let Some((handle,_)) = self.state.connections.get_mut(&_addr) {
+                                    handle.send(ServerResponse::UsernameExists).await;
+                                    self.state.user_names.insert(_name.clone());
+                                }
+                            }
+                        }
+                        ConnectionMessage::ConnectionDropped { addr } => {
+                            println!("Connection dropped : {:?}", addr);
+                            if let Some((_,Some(name))) = self.state.connections.get(&addr) {
+                                self.state.user_names.remove(name);
+                            }
+                            self.state.connections.remove(&addr);
+                        }
                     }
                     ()
                 }
@@ -68,7 +92,7 @@ impl ServerActor {
                         .unwrap());
                     println!("Connection request from : {:?}", addr);
                     let this_connection : TcpActorHandle = TcpActorHandle::new(1024, stream, SingleConnectionState::new(this_handle, addr));
-                    self.state._connections.insert(addr, this_connection);
+                    self.state.connections.insert(addr, (this_connection,None));
                 }
                 else => {
                     eprintln!("all senders dropped");

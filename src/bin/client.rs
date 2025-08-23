@@ -33,7 +33,7 @@ struct Args {
 
 enum Event {
     Input(String),
-    ServerMsg{from: String, message: String},
+    ServerMsg { from: String, message: String },
     End,
 }
 
@@ -43,17 +43,10 @@ async fn main() -> io::Result<()> {
     let args = Args::parse();
     println!("Starting with user name : {}", args.user);
 
-    // Setup terminal
-    enable_raw_mode()?;
-    let mut stdout = io::stdout();
-    execute!(stdout, EnterAlternateScreen)?;
-    let backend = CrosstermBackend::new(stdout);
-    let mut terminal = Terminal::new(backend)?;
-
     // Channel between UI and network
     let (tx, mut rx) = mpsc::channel::<Event>(100);
 
-    // Connect to server
+    // server addr
     let addr_str = std::env::var("SIMPLE_CHAT_ADDR").unwrap_or("127.0.0.1:7878".to_string());
     let addr: SocketAddr = addr_str.parse().unwrap();
     // connect to server
@@ -61,15 +54,62 @@ async fn main() -> io::Result<()> {
     let stream = match stream_res {
         Ok(stream) => stream,
         Err(e) => {
-            // if the connection fails, clean up the terminal
-            disable_raw_mode()?;
-            execute!(terminal.backend_mut(), LeaveAlternateScreen)?;
-            terminal.show_cursor()?;
             return Err(e);
         }
     };
     let (reader, mut writer) = split(stream);
     let mut reader = BufReader::new(reader);
+
+    // request the server to confirm the username
+    println!("Requesting server to accept username {}", args.user);
+    let user_req = ClientMessage::UserName(args.user.clone());
+    if let Some(bytes) = user_req.to_bytes() {
+        let res = writer.write_all(&bytes).await;
+        if let Err(e) = res {
+            return Err(e);
+        }
+    } else {
+        return Err(io::Error::new(
+            io::ErrorKind::Other,
+            "failed to serialize username request",
+        ));
+    }
+
+    println!("Waiting for server to accept username");
+    let mut user_res_buffer = [0u8; 128];
+    if let Ok(n) = reader.read(&mut user_res_buffer).await {
+        if n == 0 {
+            return Err(io::Error::new(
+                io::ErrorKind::Other,
+                "server closed connection",
+            ));
+        } else {
+            let c = ServerResponse::from_bytes(&user_res_buffer[..n]);
+            if let Some(ServerResponse::UsernameAccepted) = c {
+                println!("Server accepted username {}", args.user);
+            } else if let Some(ServerResponse::ConnectionRefused) = c {
+                return Err(io::Error::new(io::ErrorKind::Other, "connection refused"));
+            } else if let Some(ServerResponse::UsernameExists) = c {
+                return Err(io::Error::new(
+                    io::ErrorKind::Other,
+                    "username already exists",
+                ));
+            } else {
+                return Err(io::Error::new(
+                    io::ErrorKind::Other,
+                    "failed to parse server response",
+                ));
+            }
+        }
+    }
+
+    // Once the initial connection is established, we can setup the terminal
+    // Setup terminal
+    enable_raw_mode()?;
+    let mut stdout = io::stdout();
+    execute!(stdout, EnterAlternateScreen)?;
+    let backend = CrosstermBackend::new(stdout);
+    let mut terminal = Terminal::new(backend)?;
 
     // Task: read from server
     let tx_clone = tx.clone();
@@ -81,7 +121,13 @@ async fn main() -> io::Result<()> {
             } else {
                 let c = ServerResponse::from_bytes(&buffer[..n]);
                 if let Some(ServerResponse::Broadcast { username, message }) = c {
-                    if let Err(e) = tx_clone.send(Event::ServerMsg{from: username, message: message.clone()}).await {
+                    if let Err(e) = tx_clone
+                        .send(Event::ServerMsg {
+                            from: username,
+                            message: message.clone(),
+                        })
+                        .await
+                    {
                         eprintln!("failed to send message to UI : {:?}", e);
                     }
                 }
@@ -152,7 +198,7 @@ async fn main() -> io::Result<()> {
         // Handle events
         let next_action = if let Some(event) = rx.recv().await {
             match event {
-                Event::ServerMsg{from, message} => {
+                Event::ServerMsg { from, message } => {
                     messages.push(format!("{}: {}", from, message));
                     NextAction::Continue
                 }

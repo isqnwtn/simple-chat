@@ -34,7 +34,9 @@ impl TcpMessage for ClientMessage {
 #[derive(Debug,Clone,Serialize,Deserialize)]
 pub enum ServerResponse {
     Broadcast{username: String, message: String},
-    ConnectionRefused
+    ConnectionRefused,
+    UsernameExists,
+    UsernameAccepted,
 }
 
 impl TcpMessage for ServerResponse {
