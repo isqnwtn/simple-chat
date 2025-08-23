@@ -27,6 +27,12 @@ pub struct ServerState {
     pub user_names: HashSet<String>,
 }
 
+impl Default for ServerState {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ServerState {
     pub fn new() -> Self {
         Self {
@@ -37,7 +43,7 @@ impl ServerState {
 }
 
 pub static CENTRAL_CONTROLLER_HANDLE: LazyLock<OnceCell<ServerActorHandler>> =
-    LazyLock::new(|| OnceCell::new());
+    LazyLock::new(OnceCell::new);
 
 pub async fn init_central_controller(size: usize, listener: TcpListener) -> JoinHandle<()> {
     let (this_handle, join_handle): (ServerActorHandler, JoinHandle<()>) =

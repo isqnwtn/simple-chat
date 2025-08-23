@@ -102,7 +102,7 @@ impl TcpActor {
                 }
             }
         }
-        return 0;
+        0
     }
 }
 
@@ -128,19 +128,19 @@ impl TcpActorHandle {
         let actor: TcpActor = TcpActor::new(rx, krx, stream, init_params);
         tokio::spawn(async move {
             let res = actor.start().await;
-            eprintln!("Actor exited with : {}", res);
+            eprintln!("Actor exited with : {res}");
         });
-        let handle = TcpActorHandle { id: tx, kid: ktx };
-        return handle;
+        
+        TcpActorHandle { id: tx, kid: ktx }
     }
     pub async fn send(&self, msg: ServerResponse) -> () {
         if let Err(e) = self.id.send(ControllerMessages::WriteStream(msg)).await {
-            eprintln!("{:?}", e);
+            eprintln!("{e:?}");
         }
     }
     pub async fn terminate(&self, msg: ()) -> () {
         if let Err(e) = self.kid.send(msg).await {
-            eprintln!("{:?}", e);
+            eprintln!("{e:?}");
         }
     }
 }

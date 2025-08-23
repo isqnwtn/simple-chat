@@ -65,12 +65,9 @@ async fn main() -> io::Result<()> {
     let user_req = ClientMessage::UserName(args.user.clone());
     if let Some(bytes) = user_req.to_bytes() {
         let res = writer.write_all(&bytes).await;
-        if let Err(e) = res {
-            return Err(e);
-        }
+        res?
     } else {
-        return Err(io::Error::new(
-            io::ErrorKind::Other,
+        return Err(io::Error::other(
             "failed to serialize username request",
         ));
     }
@@ -79,8 +76,7 @@ async fn main() -> io::Result<()> {
     let mut user_res_buffer = [0u8; 128];
     if let Ok(n) = reader.read(&mut user_res_buffer).await {
         if n == 0 {
-            return Err(io::Error::new(
-                io::ErrorKind::Other,
+            return Err(io::Error::other(
                 "server closed connection",
             ));
         } else {
@@ -88,15 +84,13 @@ async fn main() -> io::Result<()> {
             if let Some(ServerResponse::UsernameAccepted) = c {
                 println!("Server accepted username {}", args.user);
             } else if let Some(ServerResponse::ConnectionRefused) = c {
-                return Err(io::Error::new(io::ErrorKind::Other, "connection refused"));
+                return Err(io::Error::other("connection refused"));
             } else if let Some(ServerResponse::UsernameExists) = c {
-                return Err(io::Error::new(
-                    io::ErrorKind::Other,
+                return Err(io::Error::other(
                     "username already exists",
                 ));
             } else {
-                return Err(io::Error::new(
-                    io::ErrorKind::Other,
+                return Err(io::Error::other(
                     "failed to parse server response",
                 ));
             }
@@ -128,7 +122,7 @@ async fn main() -> io::Result<()> {
                         })
                         .await
                     {
-                        eprintln!("failed to send message to UI : {:?}", e);
+                        eprintln!("failed to send message to UI : {e:?}");
                     }
                 }
             }
@@ -199,7 +193,7 @@ async fn main() -> io::Result<()> {
         let next_action = if let Some(event) = rx.recv().await {
             match event {
                 Event::ServerMsg { from, message } => {
-                    messages.push(format!("{}: {}", from, message));
+                    messages.push(format!("{from}: {message}"));
                     NextAction::Continue
                 }
                 Event::Input(s) => {
@@ -211,7 +205,7 @@ async fn main() -> io::Result<()> {
                             if let Some(bytes) = bytes {
                                 writer.write_all(&bytes).await.unwrap();
                                 writer.write_all(b"\n").await.unwrap();
-                                messages.push(format!("Me: {}", input));
+                                messages.push(format!("Me: {input}"));
                                 input.clear();
                             } else {
                                 eprintln!("failed to serialize message");

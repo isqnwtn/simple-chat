@@ -44,13 +44,13 @@ impl ServerActor {
         loop {
             tokio::select! {
                 Some(msg) = self.receiver.recv() => {
-                    println!("Received {:?}", msg);
+                    println!("Received {msg:?}");
                     match msg {
                         ConnectionMessage::UserMessage { addr, message } => {
                             if let Some((_,Some(sender_name))) = self.state.connections.get(&addr) {
                                 for (_addr, (handle,_)) in self.state.connections.iter() {
                                     if *_addr != addr {
-                                        handle.send(ServerResponse::Broadcast { username: format!("{:?}",sender_name), message: message.clone() }).await;
+                                        handle.send(ServerResponse::Broadcast { username: format!("{sender_name:?}"), message: message.clone() }).await;
                                     }
                                 }
                             }
@@ -64,22 +64,20 @@ impl ServerActor {
                                 if let Some((handle,_)) = self.state.connections.get_mut(&_addr) {
                                     handle.send(ServerResponse::UsernameAccepted).await;
                                 }
-                            } else {
-                                if let Some((handle,_)) = self.state.connections.get_mut(&_addr) {
-                                    handle.send(ServerResponse::UsernameExists).await;
-                                    self.state.user_names.insert(_name.clone());
-                                }
+                            } else if let Some((handle,_)) = self.state.connections.get_mut(&_addr) {
+                                handle.send(ServerResponse::UsernameExists).await;
+                                self.state.user_names.insert(_name.clone());
                             }
                         }
                         ConnectionMessage::ConnectionDropped { addr } => {
-                            println!("Connection dropped : {:?}", addr);
+                            println!("Connection dropped : {addr:?}");
                             if let Some((_,Some(name))) = self.state.connections.get(&addr) {
                                 self.state.user_names.remove(name);
                             }
                             self.state.connections.remove(&addr);
                         }
                     }
-                    ()
+                    
                 }
                 Some(_p) = self.poison_pill.recv() => {
                     eprintln!("killing actor");
@@ -90,7 +88,7 @@ impl ServerActor {
                     let this_handle = Arc::new(CENTRAL_CONTROLLER_HANDLE
                         .get()
                         .unwrap());
-                    println!("Connection request from : {:?}", addr);
+                    println!("Connection request from : {addr:?}");
                     let this_connection : TcpActorHandle = TcpActorHandle::new(1024, stream, SingleConnectionState::new(this_handle, addr));
                     self.state.connections.insert(addr, (this_connection,None));
                 }
@@ -104,7 +102,7 @@ impl ServerActor {
                 }
             }
         }
-        return 0;
+        0
     }
 }
 
@@ -134,19 +132,19 @@ impl ServerActorHandler {
         let actor: ServerActor = ServerActor::new(rx, krx, listener);
         let join_handle = tokio::spawn(async move {
             let res = actor.start().await;
-            eprintln!("Actor exited with : {}", res);
+            eprintln!("Actor exited with : {res}");
         });
         let handle = ServerActorHandler { id: tx, kid: ktx };
-        return (handle, join_handle);
+        (handle, join_handle)
     }
     pub async fn send(&self, msg: ConnectionMessage) -> () {
         if let Err(e) = self.id.send(msg).await {
-            eprintln!("{:?}", e);
+            eprintln!("{e:?}");
         }
     }
     pub async fn terminate(&self, msg: ()) -> () {
         if let Err(e) = self.kid.send(msg).await {
-            eprintln!("{:?}", e);
+            eprintln!("{e:?}");
         }
     }
 }
