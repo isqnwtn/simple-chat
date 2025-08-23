@@ -1,4 +1,11 @@
 # Simple Chat
+## Implementation
+- export the env variable `SIMPLE_CHAT_ADDR=127.0.0.1:7878` or any other address as required
+- run the server using `cargo run --bin server`
+- run the client using `cargo run --bin client -- -u <username>`
+- An example of the chat client in action can be seen below:
+![Example Chat Client](example.gif)
+
 
 ## Summary
 
@@ -23,7 +30,7 @@ The following is a rough specification of the server and client.
 them.
 * The user who sent the message should not get the message.
 * When a user sends a leave message, or disconnects their client, the server
-should no longer send messages to them, and do any internal bookkeeping to 
+should no longer send messages to them, and do any internal bookkeeping to
 clean up.
 * Username's should be unique.
 * The server should be able to support many users without a large delay
@@ -38,11 +45,11 @@ messages from the server.
 * The client should accept environment variables or command line arguments
 indicating the host and port where the server is listening. It should also
 accept a username that will be used as an identifier on the server.
-* The client should automatically connect to the chat server upon 
+* The client should automatically connect to the chat server upon
 initialization using the specified host and port.
-* The client should display an interactive command prompt. The prompt should 
+* The client should display an interactive command prompt. The prompt should
 be able to handle the following inputs:
-    * `send <MSG>`  where `<MSG>`  is the message that should be sent to the 
+    * `send <MSG>`  where `<MSG>`  is the message that should be sent to the
     server
     * `leave` this will disconnect the client from the server and exit the CLI.
 
@@ -65,7 +72,7 @@ it is ready for review.
 
 * Include a pre-commit hook that will ensure that all code is formatted, compiles
 without error, and is free of clippy errors.
-* Create a GitHub Action that will launch your chat server and attempt to 
+* Create a GitHub Action that will launch your chat server and attempt to
 send a message to the server from the client. Make sure that niether the server
 or client exit with a failure. This action should be run anytime new code
 is pushed to a branch or landed on the main branch.
